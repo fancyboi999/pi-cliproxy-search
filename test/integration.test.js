@@ -3,6 +3,16 @@ import test from "node:test";
 import { resolveCLIProxyConfig } from "../extensions/config.js";
 import { searchCodex } from "../extensions/codex.js";
 import { searchAntigravity } from "../extensions/antigravity.js";
+import { probeEngineCapabilities } from "../extensions/probe.js";
+
+test("CLIProxy Engine Capabilities Probe", async () => {
+  const cfg = resolveCLIProxyConfig();
+  const caps = await probeEngineCapabilities(cfg, true);
+  assert.ok(caps.models.length > 0, "should discover active registered models");
+  assert.strictEqual(typeof caps.hasCodex, "boolean");
+  assert.strictEqual(typeof caps.hasAntigravity, "boolean");
+  console.log(`Capabilities probed: Codex=${caps.hasCodex}, Antigravity=${caps.hasAntigravity}, Models=${caps.models.length}`);
+});
 
 test("CLIProxy Config Resolution", () => {
   const cfg = resolveCLIProxyConfig();

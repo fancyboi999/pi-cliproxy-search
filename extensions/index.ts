@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveCLIProxyConfig } from "./config.js";
 import { searchCodex } from "./codex.js";
 import { searchAntigravity } from "./antigravity.js";
+import { probeEngineCapabilities } from "./probe.js";
 import type { SearchResponse, SearchOptions } from "./types.js";
 
 function formatSearchResults(resp: SearchResponse): string {
@@ -48,7 +49,7 @@ export default function activate(pi: ExtensionAPI) {
         Type.Literal("codex"),
         Type.Literal("antigravity"),
       ], {
-        description: "Search engine routing: 'auto' (Codex ~2s fast crawl with Antigravity fallback), 'codex', or 'antigravity'.",
+        description: "Search engine routing: 'auto' (dynamic account discovery & fallback), 'codex', or 'antigravity'.",
         default: "auto",
       })
     ),
@@ -74,33 +75,59 @@ export default function activate(pi: ExtensionAPI) {
     onUpdate?: (update: { content: Array<{ type: "text"; text: string }>; details?: any }) => void
   ) {
     const query = params.query.trim();
-    const engineMode = params.engine ?? "auto";
+    const requestedEngine = params.engine ?? "auto";
     const options: SearchOptions = {
-      engine: engineMode,
+      engine: requestedEngine,
       limit: params.limit ?? 5,
       deep: params.deep ?? false,
     };
 
-    onUpdate?.({
-      content: [{ type: "text", text: `Searching CLIProxyAPI (${engineMode})...` }],
-    });
-
     let result: SearchResponse;
 
-    if (engineMode === "codex") {
+    if (requestedEngine === "codex") {
+      onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex Alpha Search)...` }] });
       result = await searchCodex(query, config, options, signal);
-    } else if (engineMode === "antigravity") {
+    } else if (requestedEngine === "antigravity") {
+      onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Google Antigravity Grounding)...` }] });
       result = await searchAntigravity(query, config, options, signal);
     } else {
-      // "auto" mode: Codex first (blazing fast ~2s), fallback to Antigravity if unavailable
-      try {
-        result = await searchCodex(query, config, options, signal);
-      } catch (err: any) {
-        // Automatically fallback to Antigravity Google Grounding
-        onUpdate?.({
-          content: [{ type: "text", text: `Codex route unavailable (${err?.message}), falling back to Antigravity...` }],
-        });
+      // Dynamic Auto-discovery & Tiered Fallback
+      const capabilities = await probeEngineCapabilities(config);
+
+      if (!capabilities.hasCodex && capabilities.hasAntigravity) {
+        // User has only Antigravity credentials
+        onUpdate?.({ content: [{ type: "text", text: `Codex credentials not mounted, using Antigravity Google Grounding...` }] });
         result = await searchAntigravity(query, config, options, signal);
+      } else if (capabilities.hasCodex && !capabilities.hasAntigravity) {
+        // User has only Codex credentials
+        onUpdate?.({ content: [{ type: "text", text: `Antigravity not mounted, using Codex Alpha Search...` }] });
+        result = await searchCodex(query, config, options, signal);
+      } else if (!capabilities.hasCodex && !capabilities.hasAntigravity) {
+        // Neither engine detected in /v1/models: try Codex first optimistically, then Antigravity
+        try {
+          onUpdate?.({ content: [{ type: "text", text: `Probing Codex Alpha Search...` }] });
+          result = await searchCodex(query, config, options, signal);
+        } catch (err: any) {
+          onUpdate?.({ content: [{ type: "text", text: `Codex failed (${err?.message}), attempting Antigravity fallback...` }] });
+          result = await searchAntigravity(query, config, options, signal);
+        }
+      } else {
+        // Both engines available: Codex first for ~2s blazing speed, fallback to Antigravity if any error occurs
+        try {
+          onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex ~2s fast route)...` }] });
+          result = await searchCodex(query, config, options, signal);
+        } catch (codexErr: any) {
+          onUpdate?.({
+            content: [{ type: "text", text: `Codex unavailable (${codexErr?.message || "transient error"}), falling back to Antigravity...` }],
+          });
+          try {
+            result = await searchAntigravity(query, config, options, signal);
+          } catch (agyErr: any) {
+            throw new Error(
+              `All local search engines failed. Codex: ${codexErr?.message || "error"}; Antigravity: ${agyErr?.message || "error"}. Run /cliproxy-status to diagnose.`
+            );
+          }
+        }
       }
     }
 
@@ -121,7 +148,7 @@ export default function activate(pi: ExtensionAPI) {
     name: "cliproxy_search",
     label: "CLIProxy Search",
     description:
-      "High-speed, multi-engine web search powered by local CLIProxyAPI. Defaults to OpenAI Codex Alpha Search (~2s parallel crawling) with automatic fallback to Google Antigravity Grounding.",
+      "High-speed, multi-engine web search powered by local CLIProxyAPI. Automatically discovers active accounts (Codex Alpha Search ~2s and Google Antigravity Grounding) with intelligent fallback.",
     promptSnippet: "Search the web with CLIProxyAPI using Codex Alpha Search (~2s) or Google Antigravity Grounding",
     promptGuidelines: [
       "Use cliproxy_search when you need real-time documentation, recent news, bug fixes, or online knowledge.",
@@ -150,27 +177,49 @@ export default function activate(pi: ExtensionAPI) {
 
   // Register a status command /cliproxy-status
   pi.registerCommand("cliproxy-status", {
-    description: "Check connectivity and available search engines on local CLIProxyAPI",
+    description: "Check connectivity, mounted accounts, and search engines on local CLIProxyAPI",
     async callback(_args, ctx) {
-      ctx.ui.notify(`Testing connection to ${config.endpoint}...`, "info");
+      ctx.ui.notify(`Probing CLIProxyAPI at ${config.endpoint}...`, "info");
       
-      let codexOk = false;
-      let agyOk = false;
+      const caps = await probeEngineCapabilities(config, true);
 
-      try {
-        const codexRes = await searchCodex("ping", config, { limit: 1 });
-        codexOk = codexRes.results.length > 0 || codexRes.elapsedMs > 0;
-      } catch {}
+      let codexStatus = caps.hasCodex ? "MOUNTED" : "NOT FOUND";
+      let agyStatus = caps.hasAntigravity ? "MOUNTED" : "NOT FOUND";
 
-      try {
-        const agyRes = await searchAntigravity("ping", config, { limit: 1 });
-        agyOk = agyRes.results.length > 0 || agyRes.elapsedMs > 0;
-      } catch {}
+      if (caps.hasCodex) {
+        try {
+          const res = await searchCodex("ping", config, { limit: 1 });
+          if (res.results.length > 0 || res.elapsedMs > 0) {
+            codexStatus = "READY (OK, ~2s)";
+          }
+        } catch (e: any) {
+          codexStatus = `ERROR: ${e?.message || "unreachable"}`;
+        }
+      }
+
+      if (caps.hasAntigravity) {
+        try {
+          const res = await searchAntigravity("ping", config, { limit: 1 });
+          if (res.results.length > 0 || res.elapsedMs > 0) {
+            agyStatus = "READY (OK)";
+          }
+        } catch (e: any) {
+          agyStatus = `ERROR: ${e?.message || "unreachable"}`;
+        }
+      }
 
       const msg = [
-        `CLIProxyAPI: ${config.endpoint}`,
-        `• Codex Alpha Search: ${codexOk ? "READY (OK)" : "OFFLINE / UNREACHABLE"}`,
-        `• Antigravity Grounding: ${agyOk ? "READY (OK)" : "OFFLINE / UNREACHABLE"}`
+        `CLIProxyAPI Gateway: ${config.endpoint}`,
+        `• Detected Models: ${caps.models.length} active`,
+        `• Codex Alpha Search: ${codexStatus}`,
+        `• Antigravity Grounding: ${agyStatus}`,
+        caps.hasCodex && caps.hasAntigravity
+          ? "Strategy: Dual-engine active (Codex fast-route with Antigravity fallback)"
+          : caps.hasCodex
+          ? "Strategy: Single-engine (Codex only)"
+          : caps.hasAntigravity
+          ? "Strategy: Single-engine (Antigravity only)"
+          : "Strategy: No active search credentials found in CLIProxyAPI"
       ].join("\n");
 
       ctx.ui.notify(msg, "info");
