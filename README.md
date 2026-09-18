@@ -109,17 +109,49 @@ pi -e ./pi-cliproxy-search/extensions/index.ts
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Configuration & Remote Gateways
 
-**No configuration is needed if you run CLIProxyAPI locally with default settings.**
+`pi-cliproxy-search` supports **both local and remote CLIProxyAPI instances** (e.g. deployed on a remote VPS, homelab NAS, or Tailscale private network) through a 4-tier cascading resolution strategy:
 
-The extension automatically checks:
-1. `~/.cli-proxy-api/config.yaml` for `host`, `port` (default `8317`), and `api-keys`.
-2. Environment variables for custom remote gateways or non-standard ports:
-   ```bash
-   export CLIPROXY_SEARCH_ENDPOINT="http://127.0.0.1:8317"
-   export CLIPROXY_API_KEY="your-local-api-key"
-   ```
+```text
+1. Dedicated Config File (~/.pi/agent/cliproxy-search.json)  <-- Highest precedence
+2. Environment Variables (CLIPROXY_ENDPOINT / CLIPROXY_API_KEY)
+3. Local Auto-Detection (~/.cli-proxy-api/config.yaml)        <-- Zero-config for local users
+4. Default Loopback (http://127.0.0.1:8317)                  <-- Safe fallback
+```
+
+### 1. Zero-Config for Local Users
+If you run CLIProxyAPI locally on the same machine, **no configuration is required**.
+The extension automatically inspects `~/.cli-proxy-api/config.yaml` to extract the loopback port and local API key.
+
+### 2. For Remote Instances (VPS / NAS / Tailnet)
+
+#### Method A: Interactive Command inside Pi
+Run the built-in command directly in your Pi chat:
+```text
+/cliproxy-config http://192.168.1.100:8317 your-secret-key
+```
+This automatically writes to `~/.pi/agent/cliproxy-search.json` with secure `0600` permissions and hot-reloads instantly.
+
+To view current active configuration and source:
+```text
+/cliproxy-config
+```
+
+#### Method B: JSON Config File
+Create or edit `~/.pi/agent/cliproxy-search.json`:
+```json
+{
+  "endpoint": "https://my-proxy.tailnet-xyz.ts.net",
+  "apiKey": "your-secret-token"
+}
+```
+
+#### Method C: Environment Variables (CI / Docker)
+```bash
+export CLIPROXY_ENDPOINT="http://remote-server:8317"
+export CLIPROXY_API_KEY="your-secret-token"
+```
 
 ---
 

@@ -17,7 +17,9 @@ test("CLIProxy Engine Capabilities Probe", async () => {
 test("CLIProxy Config Resolution", () => {
   const cfg = resolveCLIProxyConfig();
   assert.ok(cfg.endpoint.startsWith("http"), "endpoint should be resolved");
-  assert.ok(cfg.apiKey.length > 0, "apiKey should be resolved from config.yaml or env");
+  assert.ok(["config_file", "env", "local_yaml", "default"].includes(cfg.source));
+  assert.ok(cfg.apiKey.length > 0, "apiKey should be resolved from config or env");
+  console.log(`Config source: ${cfg.source}, endpoint: ${cfg.endpoint}`);
 });
 
 test("Codex Alpha Search Engine (~2s real execution)", async () => {

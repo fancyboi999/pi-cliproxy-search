@@ -1,10 +1,16 @@
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveCLIProxyConfig } from "./config.js";
+import { resolveCLIProxyConfig, saveCLIProxyConfigFile } from "./config.js";
 import { searchCodex } from "./codex.js";
 import { searchAntigravity } from "./antigravity.js";
 import { probeEngineCapabilities } from "./probe.js";
 import type { SearchResponse, SearchOptions } from "./types.js";
+
+function maskApiKey(key: string): string {
+  if (!key) return "(none / public)";
+  if (key.length <= 8) return "********";
+  return `${key.slice(0, 4)}...${key.slice(-4)}`;
+}
 
 function formatSearchResults(resp: SearchResponse): string {
   const engineBadge = resp.engine === "codex" ? "Codex Alpha Search" : "Google Antigravity Grounding";
@@ -36,7 +42,7 @@ function formatSearchResults(resp: SearchResponse): string {
 }
 
 export default function activate(pi: ExtensionAPI) {
-  const config = resolveCLIProxyConfig();
+  let config = resolveCLIProxyConfig();
 
   const searchParameters = Type.Object({
     query: Type.String({
@@ -74,6 +80,9 @@ export default function activate(pi: ExtensionAPI) {
     signal?: AbortSignal,
     onUpdate?: (update: { content: Array<{ type: "text"; text: string }>; details?: any }) => void
   ) {
+    // Re-resolve in case config was changed at runtime
+    config = resolveCLIProxyConfig();
+
     const query = params.query.trim();
     const requestedEngine = params.engine ?? "auto";
     const options: SearchOptions = {
@@ -95,11 +104,9 @@ export default function activate(pi: ExtensionAPI) {
       const capabilities = await probeEngineCapabilities(config);
 
       if (!capabilities.hasCodex && capabilities.hasAntigravity) {
-        // User has only Antigravity credentials
         onUpdate?.({ content: [{ type: "text", text: `Codex credentials not mounted, using Antigravity Google Grounding...` }] });
         result = await searchAntigravity(query, config, options, signal);
       } else if (capabilities.hasCodex && !capabilities.hasAntigravity) {
-        // User has only Codex credentials
         onUpdate?.({ content: [{ type: "text", text: `Antigravity not mounted, using Codex Alpha Search...` }] });
         result = await searchCodex(query, config, options, signal);
       } else if (!capabilities.hasCodex && !capabilities.hasAntigravity) {
@@ -112,7 +119,7 @@ export default function activate(pi: ExtensionAPI) {
           result = await searchAntigravity(query, config, options, signal);
         }
       } else {
-        // Both engines available: Codex first for ~2s blazing speed, fallback to Antigravity if any error occurs
+        // Both engines available: Codex first (~2s speed), fallback to Antigravity if any error occurs
         try {
           onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex ~2s fast route)...` }] });
           result = await searchCodex(query, config, options, signal);
@@ -148,7 +155,7 @@ export default function activate(pi: ExtensionAPI) {
     name: "cliproxy_search",
     label: "CLIProxy Search",
     description:
-      "High-speed, multi-engine web search powered by local CLIProxyAPI. Automatically discovers active accounts (Codex Alpha Search ~2s and Google Antigravity Grounding) with intelligent fallback.",
+      "High-speed, multi-engine web search powered by CLIProxyAPI. Automatically discovers active accounts (Codex Alpha Search ~2s and Google Antigravity Grounding) with intelligent fallback.",
     promptSnippet: "Search the web with CLIProxyAPI using Codex Alpha Search (~2s) or Google Antigravity Grounding",
     promptGuidelines: [
       "Use cliproxy_search when you need real-time documentation, recent news, bug fixes, or online knowledge.",
@@ -175,11 +182,47 @@ export default function activate(pi: ExtensionAPI) {
     // web_search may already be registered by another extension; cliproxy_search remains available
   }
 
+  // Register /cliproxy-config to view or update remote/local configuration
+  pi.registerCommand("cliproxy-config", {
+    description: "View or set CLIProxyAPI search endpoint and API key (supports remote NAS/VPS)",
+    async callback(args, ctx) {
+      const parts = (args || "").trim().split(/\s+/).filter(Boolean);
+
+      if (parts.length > 0) {
+        const newEndpoint = parts[0];
+        const newKey = parts[1] || "";
+        const savedPath = saveCLIProxyConfigFile({ endpoint: newEndpoint, apiKey: newKey });
+        config = resolveCLIProxyConfig();
+
+        ctx.ui.notify(
+          `Configuration saved to ${savedPath}\nEndpoint: ${config.endpoint}\nKey: ${maskApiKey(config.apiKey)}`,
+          "info"
+        );
+        return;
+      }
+
+      config = resolveCLIProxyConfig();
+      const info = [
+        `CLIProxy Search Configuration:`,
+        `• Endpoint: ${config.endpoint}`,
+        `• API Key: ${maskApiKey(config.apiKey)}`,
+        `• Source: ${config.source} (${config.configFilePath || "environment/default"})`,
+        ``,
+        `To configure a remote instance:`,
+        `/cliproxy-config <endpoint_url> [api_key]`,
+        `Example: /cliproxy-config http://192.168.1.100:8317 my-secret-key`
+      ].join("\n");
+
+      ctx.ui.notify(info, "info");
+    },
+  });
+
   // Register a status command /cliproxy-status
   pi.registerCommand("cliproxy-status", {
-    description: "Check connectivity, mounted accounts, and search engines on local CLIProxyAPI",
+    description: "Check connectivity, mounted accounts, and search engines on CLIProxyAPI",
     async callback(_args, ctx) {
-      ctx.ui.notify(`Probing CLIProxyAPI at ${config.endpoint}...`, "info");
+      config = resolveCLIProxyConfig();
+      ctx.ui.notify(`Probing CLIProxyAPI at ${config.endpoint} (source: ${config.source})...`, "info");
       
       const caps = await probeEngineCapabilities(config, true);
 
@@ -210,6 +253,7 @@ export default function activate(pi: ExtensionAPI) {
 
       const msg = [
         `CLIProxyAPI Gateway: ${config.endpoint}`,
+        `• Config Source: ${config.source}`,
         `• Detected Models: ${caps.models.length} active`,
         `• Codex Alpha Search: ${codexStatus}`,
         `• Antigravity Grounding: ${agyStatus}`,
