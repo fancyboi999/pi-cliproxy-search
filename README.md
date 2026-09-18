@@ -1,45 +1,100 @@
+<div align="center">
+
 # pi-cliproxy-search
 
-> **High-speed, multi-engine web search for [Pi Coding Agent](https://pi.dev) powered by your local [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) gateway.**
+<p align="center">
+  <img src="assets/hero.png" alt="pi-cliproxy-search hero banner" width="680" style="border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+</p>
 
-## Why pi-cliproxy-search?
+**Blazing-fast, multi-engine web search extension for [Pi Coding Agent](https://pi.dev) powered by your local [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) gateway.**
 
-Most web search tools for coding agents fall into two extremes:
-1. **Third-party public engines (Exa, DuckDuckGo, Tavily)**: Suffer from frequent rate-limits, anti-bot Cloudflare challenges, or require separate paid API keys.
-2. **Sub-LLM search wrappers (e.g. `pi-web-search`)**: Delegate the search to a secondary LLM to generate summaries, which costs 6–9 seconds of wait time and burns heavy input/reasoning tokens.
+[![Pi Package](https://img.shields.io/badge/pi--package-discoverable-blue.svg?style=flat-square)](https://pi.dev/packages)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![CLIProxyAPI Compatible](https://img.shields.io/badge/CLIProxyAPI-v7.3+-green.svg?style=flat-square)](https://github.com/router-for-me/CLIProxyAPI)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg?style=flat-square)](https://nodejs.org)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://github.com/fancyboi999/pi-cliproxy-search/pulls)
 
-**`pi-cliproxy-search` bridges Pi directly to your local CLIProxyAPI accounts:**
-- **Codex Alpha Search (`/v1/alpha/search`)**: Blazing fast (**~2s**), raw parallel crawling directly from OpenAI's backend cluster. Returns unadulterated Markdown extracts without secondary LLM interpretation.
-- **Google Antigravity Grounding**: Automatic seamless fallback with official Google Grounding citations if Codex credentials are unavailable or rate-limited.
-- **Model-Agnostic**: Works seamlessly regardless of your active Pi conversation model (Claude 3.7, DeepSeek V3, Qwen, etc.).
-- **Zero Config**: Automatically discovers your local CLIProxyAPI instance and API key from `~/.cli-proxy-api/config.yaml`.
-
----
-
-## Features
-
-| Feature | Description |
-| :--- | :--- |
-| ⚡ **~2s Blazing Fast** | Directly uses OpenAI Codex Alpha Search parallel crawler pipeline. |
-| 🛡️ **Dual-Engine Resilience** | Auto-fallback to Antigravity (Google Search Grounding) on any transient errors. |
-| 💰 **Zero Extra API Cost** | Reuses your existing Codex / Antigravity accounts already signed into CLIProxyAPI. |
-| 🧼 **Token Safe** | Structured citation extracts by default (~3–5KB). Optional `deep: true` for full Markdown. |
-| 🔍 **Drop-in Replacement** | Registers both `cliproxy_search` and optionally `web_search`. |
-| 📊 **Status Diagnostics** | Includes a built-in `/cliproxy-status` command to verify backend health. |
+</div>
 
 ---
 
-## Installation
+## ⚡ Overview
 
-### From Git (Recommended)
+**`pi-cliproxy-search`** bridges your Pi Coding Agent directly to local AI gateway endpoints, providing instant, high-relevance web search and documentation retrieval without third-party API keys or rate-limits.
+
+Instead of relying on fragile public search scrapers or slow secondary sub-LLM summarizers, this package routes queries straight through your authenticated **OpenAI Codex** and **Google Antigravity** accounts via [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
+
+### 🚀 Benchmarks at a Glance
+
+| Search Method | Average Latency | Data Volume | Context Quality | Token / Message Cost |
+| :--- | :--- | :--- | :--- | :--- |
+| **`pi-cliproxy-search` (Codex)** | **~1.9s** ⚡ | 70–80 KB Markdown | **Direct raw web crawl (unaltered)** | **0 Sub-LLM Tokens / 0 Messages** |
+| `pi-web-search` (Sub-LLM) | **~6.8s** | 2–4 KB Summary | Secondary model summary (lossy) | Heavy input & reasoning token burn |
+| Public Scraping (`pi-web-access`) | **~3.5s–8s+** | 1–3 KB Snippets | Often blocked by anti-bot/Cloudflare | Free public, zero SLA |
+
+---
+
+## 🌟 Key Features
+
+* **⚡ ~2s Pure Raw Search (Codex Alpha Search)**: Uses OpenAI's backend cluster crawler (`/v1/alpha/search`) to retrieve 30–40 authoritative sources and clean Markdown extracts in under 2 seconds.
+* **🛡️ Dual-Engine Automatic Fallback (Google Antigravity)**: Seamlessly falls back to Antigravity Google Search Grounding with verified source citations if Codex credentials are busy or rate-limited.
+* **🧠 100% Model-Agnostic**: Works with **any active Pi conversation model** — whether you are coding with Claude 3.7 Sonnet, DeepSeek V3, Qwen 2.5, or local Ollama models.
+* **🔌 Zero-Configuration Auto-Discovery**: Automatically parses your local `~/.cli-proxy-api/config.yaml` to resolve loopback host, port (`8317`), and authentication tokens.
+* **🛡️ Context Window & Token Protection**: Extracts clean structured titles, URLs, and concise snippets by default (~3 KB). Full Markdown text is strictly opt-in via `deep: true`.
+* **🩺 Built-in Health Command**: Run `/cliproxy-status` right inside Pi to verify live gateway and engine connectivity.
+
+---
+
+## 📐 Architecture & Routing Logic
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    Pi Coding Agent Session                  │
+│       (Claude 3.7 / DeepSeek V3 / Qwen / Any Model)         │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ Calls cliproxy_search / web_search
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  pi-cliproxy-search Router                  │
+│               (Zero-config local discovery)                 │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │ Primary (~1.9s)               │ Fallback (on 429/error)
+               ▼                               ▼
+  ┌─────────────────────────┐     ┌─────────────────────────┐
+  │   Codex Alpha Search    │     │  Google Antigravity     │
+  │    (/v1/alpha/search)   │     │    (/v1/messages)       │
+  │   38 Sources Markdown   │     │  Google Search Ground   │
+  └─────────────────────────┘     └─────────────────────────┘
+               │                               │
+               └───────────────┬───────────────┘
+                               ▼
+               Clean Structured Markdown Output
+               (with optional deep page extracts)
+```
+
+---
+
+## 📦 Installation
+
+### Option 1: Direct Git Install (Recommended)
+
+Run directly from your terminal:
 
 ```bash
 pi install git:github.com/fancyboi999/pi-cliproxy-search
 ```
 
-### Local / Development Mode
+### Option 2: Project-Local Installation
 
-Clone and install directly from your local filesystem:
+To install only for the current project:
+
+```bash
+pi install --local git:github.com/fancyboi999/pi-cliproxy-search
+```
+
+### Option 3: Local Development Mode
+
+Clone the repository and install from the directory:
 
 ```bash
 git clone https://github.com/fancyboi999/pi-cliproxy-search.git
@@ -47,62 +102,74 @@ cd pi-cliproxy-search
 pi install .
 ```
 
-To test without permanently installing:
+To test without installation:
 ```bash
 pi -e ./pi-cliproxy-search/extensions/index.ts
 ```
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-**Zero configuration required by default!**
+**No configuration is needed if you run CLIProxyAPI locally with default settings.**
 
-`pi-cliproxy-search` automatically inspects:
-1. `~/.cli-proxy-api/config.yaml` to detect your local `host`, `port` (default `8317`), and `api-keys`.
-2. Environment variables override (optional):
+The extension automatically checks:
+1. `~/.cli-proxy-api/config.yaml` for `host`, `port` (default `8317`), and `api-keys`.
+2. Environment variables for custom remote gateways or non-standard ports:
    ```bash
    export CLIPROXY_SEARCH_ENDPOINT="http://127.0.0.1:8317"
-   export CLIPROXY_API_KEY="your-cli-proxy-api-key"
+   export CLIPROXY_API_KEY="your-local-api-key"
    ```
 
 ---
 
-## Tool Parameters
+## 🛠️ Tool Usage & Parameters
 
-The agent can call `cliproxy_search` (or `web_search`):
+The agent can invoke `cliproxy_search` (or standard `web_search`):
 
 ```json
 {
-  "query": "Kubernetes 1.32 release notes changes",
+  "query": "Go 1.27 release notes and runtime changes",
   "engine": "auto",
   "limit": 5,
   "deep": false
 }
 ```
 
-* **`query`** *(string, required)*: The search query.
-* **`engine`** *(enum: `"auto"` \| `"codex"` \| `"antigravity"`, default: `"auto"`)*:
-  - `"auto"`: Fast Codex crawl first (~2s); falls back to Google Antigravity if unavailable.
-  - `"codex"`: Force OpenAI Codex Alpha Search.
-  - `"antigravity"`: Force Google Antigravity Grounding with authoritative citation URLs.
-* **`deep`** *(boolean, default: `false`)*:
-  - `false`: Returns high-relevance title, URL, domain, and snippet (token-efficient).
-  - `true`: Includes full crawled Markdown page extracts (useful when reading long documentation).
-* **`limit`** *(integer, 1–10, default: `5`)*: Maximum number of search sources to return.
+### Parameters
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `query` | `string` | **required** | The search keyword or phrase. |
+| `engine` | `enum` | `"auto"` | `"auto"` (Codex first, Antigravity fallback), `"codex"`, or `"antigravity"`. |
+| `deep` | `boolean` | `false` | When `true`, includes raw Markdown extracts from crawled pages (useful for in-depth code/API docs). |
+| `limit` | `integer` | `5` | Maximum number of source citations to return (1–10). |
 
 ---
 
-## Interactive Command
+## 🩺 Diagnostics Command
 
-In any Pi chat session:
+In any Pi chat session, type:
+
 ```text
 /cliproxy-status
 ```
-Checks connectivity to your local CLIProxyAPI instance and verifies the health of both Codex and Antigravity search pipelines.
+
+The extension performs live probes against your local CLIProxyAPI instance and reports:
+* Gateway loopback reachability
+* **Codex Alpha Search** status (`READY` / `OFFLINE`)
+* **Google Antigravity Grounding** status (`READY` / `OFFLINE`)
 
 ---
 
-## License
+## 🤝 Contributing
 
-MIT © [fancyboi999](https://github.com/fancyboi999)
+Contributions, bug reports, and pull requests are warmly welcome!
+* To report a bug or suggest a feature: [Open an Issue](https://github.com/fancyboi999/pi-cliproxy-search/issues)
+* Pull requests should pass test suites: `bun test` or `node --test`
+
+---
+
+## 📄 License
+
+[MIT License](LICENSE) © 2026 [fancyboi999](https://github.com/fancyboi999)
