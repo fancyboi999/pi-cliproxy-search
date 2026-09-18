@@ -1,9 +1,10 @@
-import { Type } from "typebox";
+import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveCLIProxyConfig, saveCLIProxyConfigFile } from "./config.js";
 import { searchCodex } from "./codex.js";
 import { searchAntigravity } from "./antigravity.js";
 import { probeEngineCapabilities } from "./probe.js";
+import { fetchWebPage } from "./fetch.js";
 import type { SearchResponse, SearchOptions } from "./types.js";
 
 function maskApiKey(key: string): string {
@@ -78,7 +79,7 @@ export default function activate(pi: ExtensionAPI) {
   async function executeSearch(
     params: { query: string; engine?: "auto" | "codex" | "antigravity"; deep?: boolean; limit?: number },
     signal?: AbortSignal,
-    onUpdate?: (update: { content: Array<{ type: "text"; text: string }>; details?: any }) => void
+    onUpdate?: any
   ) {
     // Re-resolve in case config was changed at runtime
     config = resolveCLIProxyConfig();
@@ -150,6 +151,45 @@ export default function activate(pi: ExtensionAPI) {
     };
   }
 
+  const fetchParameters = Type.Object({
+    url: Type.String({
+      description: "The web page URL to fetch and convert into clean Markdown (e.g. documentation, articles, PRs).",
+      minLength: 1,
+    }),
+    maxChars: Type.Optional(
+      Type.Integer({
+        description: "Maximum characters of Markdown to return (default 15000, set to 0 for unlimited).",
+        minimum: 0,
+        default: 15000,
+      })
+    ),
+  });
+
+  async function executeFetch(
+    params: { url: string; maxChars?: number },
+    signal?: AbortSignal,
+    onUpdate?: any
+  ) {
+    onUpdate?.({ content: [{ type: "text", text: `Fetching and extracting clean markdown from ${params.url}...` }] });
+    const res = await fetchWebPage(params.url, { maxChars: params.maxChars }, signal);
+
+    let header = `### Web Page Content (${res.engine === "jina" ? "Jina Reader" : "Direct Fetch"}, ${res.elapsedMs}ms)\n\n`;
+    if (res.title) {
+      header += `**Title:** ${res.title}\n`;
+    }
+    header += `**URL:** ${res.url}\n\n---\n\n`;
+
+    return {
+      content: [{ type: "text" as const, text: header + res.content }],
+      details: {
+        engine: res.engine,
+        elapsedMs: res.elapsedMs,
+        truncated: res.truncated,
+        totalChars: res.totalChars,
+      },
+    };
+  }
+
   // Register cliproxy_search
   pi.registerTool({
     name: "cliproxy_search",
@@ -182,10 +222,42 @@ export default function activate(pi: ExtensionAPI) {
     // web_search may already be registered by another extension; cliproxy_search remains available
   }
 
+  // Register cliproxy_fetch
+  pi.registerTool({
+    name: "cliproxy_fetch",
+    label: "CLIProxy Fetch",
+    description:
+      "Fetch any web page URL and extract its clean, high-fidelity Markdown content via Jina Reader (with local fallback). Eliminates HTML boilerplate, bypasses Cloudflare/SPAs, and avoids LLM summary bias.",
+    promptSnippet: "Fetch web pages and extract clean Markdown content without LLM summary bias",
+    promptGuidelines: [
+      "Use cliproxy_fetch or web_fetch when you need to read the exact full text, code blocks, or documentation from a specific URL.",
+      "Prefer fetch over curl for HTML pages to eliminate noise and save tokens."
+    ],
+    parameters: fetchParameters,
+    async execute(_toolCallId, params, signal, onUpdate) {
+      return executeFetch(params, signal, onUpdate);
+    },
+  });
+
+  // Also register web_fetch if not already occupied to provide a drop-in replacement
+  try {
+    pi.registerTool({
+      name: "web_fetch",
+      label: "Web Fetch (CLIProxy)",
+      description: "Fetch any web page URL and extract clean Markdown content via Jina Reader/Direct fallback.",
+      parameters: fetchParameters,
+      async execute(_toolCallId, params, signal, onUpdate) {
+        return executeFetch(params, signal, onUpdate);
+      },
+    });
+  } catch {
+    // web_fetch may already be registered
+  }
+
   // Register /cliproxy-config to view or update remote/local configuration
   pi.registerCommand("cliproxy-config", {
     description: "View or set CLIProxyAPI search endpoint and API key (supports remote NAS/VPS)",
-    async callback(args, ctx) {
+    async handler(args: string, ctx: any) {
       const parts = (args || "").trim().split(/\s+/).filter(Boolean);
 
       if (parts.length > 0) {
@@ -220,7 +292,7 @@ export default function activate(pi: ExtensionAPI) {
   // Register a status command /cliproxy-status
   pi.registerCommand("cliproxy-status", {
     description: "Check connectivity, mounted accounts, and search engines on CLIProxyAPI",
-    async callback(_args, ctx) {
+    async handler(_args: string, ctx: any) {
       config = resolveCLIProxyConfig();
       ctx.ui.notify(`Probing CLIProxyAPI at ${config.endpoint} (source: ${config.source})...`, "info");
       

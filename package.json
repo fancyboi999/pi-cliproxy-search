@@ -1,7 +1,7 @@
 {
   "name": "pi-cliproxy-search",
-  "version": "0.1.0",
-  "description": "Blazing-fast multi-engine web search extension for Pi Coding Agent powered by local CLIProxyAPI (Codex Alpha Search & Google Antigravity Grounding).",
+  "version": "0.1.1",
+  "description": "Blazing-fast multi-engine web search & clean page fetch extension for Pi Coding Agent powered by local CLIProxyAPI (Codex & Antigravity) and Jina Reader.",
   "keywords": [
     "pi-package",
     "coding-agent",
@@ -44,8 +44,9 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "typescript": "^5.4.5"
+    "@sinclair/typebox": "^0.34.52",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "build": "tsc --noEmit",

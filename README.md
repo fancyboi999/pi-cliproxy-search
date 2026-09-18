@@ -157,7 +157,13 @@ export CLIPROXY_API_KEY="your-secret-token"
 
 ## 🛠️ Tool Usage & Parameters
 
-The agent can invoke `cliproxy_search` (or standard `web_search`):
+The extension exposes two complementary tools for your coding agent:
+1. **`cliproxy_search`** (or `web_search`): High-speed query search with multi-engine fallback.
+2. **`cliproxy_fetch`** (or `web_fetch`): High-fidelity web page reader converting raw HTML/SPAs directly into clean Markdown via Jina Reader.
+
+---
+
+### 1. `cliproxy_search` (Search Engine)
 
 ```json
 {
@@ -168,14 +174,36 @@ The agent can invoke `cliproxy_search` (or standard `web_search`):
 }
 ```
 
-### Parameters
-
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `query` | `string` | **required** | The search keyword or phrase. |
 | `engine` | `enum` | `"auto"` | `"auto"` (Codex first, Antigravity fallback), `"codex"`, or `"antigravity"`. |
 | `deep` | `boolean` | `false` | When `true`, includes raw Markdown extracts from crawled pages (useful for in-depth code/API docs). |
 | `limit` | `integer` | `5` | Maximum number of source citations to return (1–10). |
+
+---
+
+### 2. `cliproxy_fetch` (Clean Page Reader)
+
+When you need to inspect an exact article, GitHub documentation, or blog post from a specific URL:
+
+```json
+{
+  "url": "https://go.dev/doc/devel/release",
+  "maxChars": 15000
+}
+```
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `url` | `string` | **required** | The target webpage URL to fetch and convert to Markdown. |
+| `maxChars` | `integer` | `15000` | Safety context cap (0 for unlimited). Truncates long pages to protect LLM context windows. |
+
+**Why `cliproxy_fetch` over `curl`?**
+* **Clean Markdown Extraction**: Powered by Jina Reader (`r.jina.ai`) — eliminates `<script>`, `<style>`, navigation bars, cookie banners, and ads.
+* **Bypasses Cloudflare & SPAs**: Successfully fetches dynamic Single Page Applications (React/Vue/Next.js) that return empty divs under `curl`.
+* **Zero LLM Hallucination / Bias**: Direct algorithmic DOM-to-Markdown conversion — not a secondary LLM summary. Function signatures, type definitions, and code blocks remain 100% exact.
+* **Resilient Direct Fallback**: Automatically falls back to native HTTP fetch + text stripper if external reader services are unavailable.
 
 ---
 
