@@ -8,6 +8,8 @@
 
 **Blazing-fast, multi-engine web search extension for [Pi Coding Agent](https://pi.dev) powered by your local [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) gateway.**
 
+[![npm version](https://img.shields.io/npm/v/pi-cliproxy-search.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/pi-cliproxy-search)
+[![CI](https://img.shields.io/github/actions/workflow/status/fancyboi999/pi-cliproxy-search/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/fancyboi999/pi-cliproxy-search/actions)
 [![Pi Package](https://img.shields.io/badge/pi--package-discoverable-blue.svg?style=flat-square)](https://pi.dev/packages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![CLIProxyAPI Compatible](https://img.shields.io/badge/CLIProxyAPI-v7.3+-green.svg?style=flat-square)](https://github.com/router-for-me/CLIProxyAPI)
