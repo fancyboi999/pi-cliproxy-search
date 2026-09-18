@@ -1,0 +1,40 @@
+{
+  "name": "pi-cliproxy-search",
+  "version": "0.1.0",
+  "description": "Blazing-fast multi-engine web search for Pi Coding Agent via local CLIProxyAPI (Codex Alpha Search & Antigravity Google Grounding).",
+  "keywords": [
+    "pi-package",
+    "web-search",
+    "cliproxyapi",
+    "codex",
+    "antigravity",
+    "google-search"
+  ],
+  "author": "fancyboi999",
+  "license": "MIT",
+  "main": "extensions/index.ts",
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "node --test test/*.test.js"
+  }
+}
