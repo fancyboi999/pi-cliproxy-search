@@ -10,6 +10,8 @@ export interface FetchResult {
 
 export interface FetchOptions {
   maxChars?: number;
+  targetSelector?: string;
+  removeSelector?: string;
 }
 
 /**
@@ -35,6 +37,20 @@ function cleanRawHtml(html: string): string {
 }
 
 /**
+ * Post-processes Markdown to strip navigation residues and reduce whitespace.
+ */
+function polishMarkdown(raw: string): string {
+  return raw
+    // Remove "Skip to content" links
+    .replace(/\[Skip to (?:main )?content\]\([^)]+\)/gi, "")
+    // Remove standalone empty image references or common banner noise
+    .replace(/\[!\[Image \d+[^\]]*\]\([^)]+\)\]\([^)]+\)/g, "")
+    // Collapse 3 or more newlines to 2
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
  * High-fidelity web content fetcher:
  * 1. Primary: Jina Reader (https://r.jina.ai/<url>) for clean, anti-bot-resistant Markdown.
  * 2. Fallback: Direct fetch with lightweight DOM/text extraction.
@@ -53,21 +69,33 @@ export async function fetchWebPage(
     targetUrl = `https://${targetUrl}`;
   }
 
+  // Build remove selector
+  const defaultRemove = "nav, header, footer, .navigation, .nav, .sidebar, .menu, .navbar, .header-wrapper, .AppHeader";
+  const finalRemove = options?.removeSelector
+    ? `${defaultRemove}, ${options.removeSelector}`
+    : defaultRemove;
+
   // 1. Primary route: Jina Reader (High-fidelity Markdown, bypasses Cloudflare/SPAs)
   try {
     const jinaUrl = `https://r.jina.ai/${targetUrl}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const onAbort = () => controller.abort();
     signal?.addEventListener("abort", onAbort);
 
+    const headers: Record<string, string> = {
+      "Accept": "text/plain",
+      "X-Return-Format": "markdown",
+      "X-Remove-Selector": finalRemove,
+    };
+    if (options?.targetSelector) {
+      headers["X-Target-Selector"] = options.targetSelector;
+    }
+
     const res = await fetch(jinaUrl, {
       method: "GET",
-      headers: {
-        "Accept": "text/plain",
-        "X-Return-Format": "markdown",
-      },
+      headers,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -85,6 +113,7 @@ export async function fetchWebPage(
         body = text.slice(mdContentIndex + "Markdown Content:".length).trim();
       }
 
+      body = polishMarkdown(body);
       const totalChars = body.length;
       let finalContent = body;
       let truncated = false;
@@ -127,7 +156,7 @@ export async function fetchWebPage(
     const titleMatch = rawHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
     const title = titleMatch ? titleMatch[1].trim() : undefined;
 
-    const cleaned = cleanRawHtml(rawHtml);
+    const cleaned = polishMarkdown(cleanRawHtml(rawHtml));
     const totalChars = cleaned.length;
     let finalContent = cleaned;
     let truncated = false;
