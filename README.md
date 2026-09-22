@@ -40,6 +40,7 @@ Instead of relying on fragile public search scrapers or slow secondary sub-LLM s
 
 * **⚡ ~2s Pure Raw Search (Codex Alpha Search)**: Uses OpenAI's backend cluster crawler (`/v1/alpha/search`) to retrieve 30–40 authoritative sources and clean Markdown extracts in under 2 seconds.
 * **🛡️ Dual-Engine Automatic Fallback (Google Antigravity)**: Seamlessly falls back to Antigravity Google Search Grounding with verified source citations if Codex credentials are busy or rate-limited.
+* **⏳ Smart Rate-Limit & Cooldown Window**: When Codex returns HTTP 429/quota limits, the extension parses `retry-after` and nested `reset_seconds`, persists recovery timestamps (`~/.pi/agent/cliproxy-cooldown.json`), and automatically routes all subsequent queries directly to Antigravity until the cooldown expires without wasted network roundtrips.
 * **🧠 100% Model-Agnostic**: Works with **any active Pi conversation model** — whether you are coding with Claude 3.7 Sonnet, DeepSeek V3, Qwen 2.5, or local Ollama models.
 * **🔌 Zero-Configuration Auto-Discovery**: Automatically parses your local `~/.cli-proxy-api/config.yaml` to resolve loopback host, port (`8317`), and authentication tokens.
 * **🛡️ Context Window & Token Protection**: Extracts clean structured titles, URLs, and concise snippets by default (~3 KB). Full Markdown text is strictly opt-in via `deep: true`.
@@ -219,8 +220,14 @@ In any Pi chat session, type:
 
 The extension performs live probes against your local CLIProxyAPI instance and reports:
 * Gateway loopback reachability
-* **Codex Alpha Search** status (`READY` / `OFFLINE`)
+* **Codex Alpha Search** status (`READY` / `COOLING DOWN (Until xx:xx:xx, ~xxm left)` / `OFFLINE`)
 * **Google Antigravity Grounding** status (`READY` / `OFFLINE`)
+* Active routing strategy
+
+To manually reset a cooldown cache at any time:
+```text
+/cliproxy-status reset
+```
 
 ---
 
