@@ -1,5 +1,5 @@
-import type { CLIProxyConfig } from "./config.js";
-import type { SearchResponse, SearchItem, SearchOptions } from "./types.js";
+import type { CLIProxyConfig } from "./config.ts";
+import type { SearchResponse, SearchItem, SearchOptions } from "./types.ts";
 
 interface AnthropicMessageResponse {
   id?: string;

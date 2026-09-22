@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
-import type { CLIProxyConfig } from "./config.js";
-import type { SearchResponse, SearchItem, SearchOptions } from "./types.js";
+import type { CLIProxyConfig } from "./config.ts";
+import type { SearchResponse, SearchItem, SearchOptions } from "./types.ts";
+import { getCodexCooldown, recordCodexCooldown, formatCooldownTime } from "./cooldown.ts";
 
 interface CodexAlphaSearchRawResult {
   output?: string;
@@ -24,6 +25,14 @@ export async function searchCodex(
   options?: SearchOptions,
   signal?: AbortSignal
 ): Promise<SearchResponse> {
+  const currentCooldown = getCodexCooldown();
+  if (currentCooldown.active) {
+    const formatted = formatCooldownTime(currentCooldown.cooldownUntil);
+    throw new Error(
+      `Codex Alpha Search is in cooldown until ${formatted.absolute} (~${formatted.relative} remaining, reason: ${currentCooldown.reason || "rate limited"}).`
+    );
+  }
+
   const startTime = Date.now();
   const limit = options?.limit ?? 5;
   const deep = options?.deep ?? false;
@@ -70,6 +79,18 @@ export async function searchCodex(
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
+    if (
+      response.status === 429 ||
+      response.headers.has("retry-after") ||
+      errText.includes("model_cooldown") ||
+      errText.includes("usage_limit_reached")
+    ) {
+      const cooldownInfo = recordCodexCooldown(response.status, response.headers, errText);
+      const formatted = formatCooldownTime(cooldownInfo.cooldownUntil);
+      throw new Error(
+        `Codex Alpha Search failed (HTTP ${response.status}): cooling down until ${formatted.absolute} (~${formatted.relative} remaining). ${errText}`
+      );
+    }
     throw new Error(`Codex Alpha Search failed (HTTP ${response.status}): ${errText}`);
   }
 

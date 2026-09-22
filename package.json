@@ -16,6 +16,7 @@
   ],
   "author": "fancyboi999",
   "license": "MIT",
+  "type": "module",
   "main": "extensions/index.ts",
   "repository": {
     "type": "git",
@@ -50,6 +51,6 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "node --test test/*.test.js"
+    "test": "node --experimental-strip-types --test test/*.test.ts"
   }
 }

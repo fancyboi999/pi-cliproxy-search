@@ -1,11 +1,12 @@
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveCLIProxyConfig, saveCLIProxyConfigFile } from "./config.js";
-import { searchCodex } from "./codex.js";
-import { searchAntigravity } from "./antigravity.js";
-import { probeEngineCapabilities } from "./probe.js";
-import { fetchWebPage } from "./fetch.js";
-import type { SearchResponse, SearchOptions } from "./types.js";
+import { resolveCLIProxyConfig, saveCLIProxyConfigFile } from "./config.ts";
+import { searchCodex } from "./codex.ts";
+import { searchAntigravity } from "./antigravity.ts";
+import { probeEngineCapabilities } from "./probe.ts";
+import { fetchWebPage } from "./fetch.ts";
+import { getCodexCooldown, clearCodexCooldown, formatCooldownTime } from "./cooldown.ts";
+import type { SearchResponse, SearchOptions } from "./types.ts";
 
 function maskApiKey(key: string): string {
   if (!key) return "(none / public)";
@@ -13,9 +14,13 @@ function maskApiKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
-function formatSearchResults(resp: SearchResponse): string {
+function formatSearchResults(resp: SearchResponse, cooldownNotice?: string): string {
   const engineBadge = resp.engine === "codex" ? "Codex Alpha Search" : "Google Antigravity Grounding";
-  const header = `### Web Search Results (${engineBadge}, ${resp.elapsedMs}ms)\n\n**Query:** \`${resp.query}\`\n`;
+  let header = `### Web Search Results (${engineBadge}, ${resp.elapsedMs}ms)\n\n**Query:** \`${resp.query}\`\n`;
+
+  if (cooldownNotice) {
+    header += `> ℹ️ ${cooldownNotice}\n\n`;
+  }
 
   let body = "";
 
@@ -93,8 +98,16 @@ export default function activate(pi: ExtensionAPI) {
     };
 
     let result: SearchResponse;
+    let cooldownNotice: string | undefined;
+    const cooldown = getCodexCooldown();
 
     if (requestedEngine === "codex") {
+      if (cooldown.active) {
+        const remaining = formatCooldownTime(cooldown.cooldownUntil);
+        throw new Error(
+          `Codex Alpha Search 处于额度冷却中（预计在 ${remaining.relative} 后的 ${remaining.absolute} 恢复）。建议切换为 auto 模式或使用 antigravity 引擎。`
+        );
+      }
       onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex Alpha Search)...` }] });
       result = await searchCodex(query, config, options, signal);
     } else if (requestedEngine === "antigravity") {
@@ -102,44 +115,68 @@ export default function activate(pi: ExtensionAPI) {
       result = await searchAntigravity(query, config, options, signal);
     } else {
       // Dynamic Auto-discovery & Tiered Fallback
-      const capabilities = await probeEngineCapabilities(config);
-
-      if (!capabilities.hasCodex && capabilities.hasAntigravity) {
-        onUpdate?.({ content: [{ type: "text", text: `Codex credentials not mounted, using Antigravity Google Grounding...` }] });
+      if (cooldown.active) {
+        // Cooldown period: skip Codex attempt directly and use Antigravity
+        const remaining = formatCooldownTime(cooldown.cooldownUntil);
+        cooldownNotice = `Codex 额度冷却中（预计 ${remaining.relative} 后于 ${remaining.absolute} 恢复），已自动切换至 Google Antigravity 兜底。`;
+        onUpdate?.({
+          content: [{
+            type: "text",
+            text: `Codex 额度冷却中（预计 ${remaining.relative} 后于 ${remaining.absolute} 恢复），自动路由至 Antigravity 搜索...`,
+          }],
+        });
         result = await searchAntigravity(query, config, options, signal);
-      } else if (capabilities.hasCodex && !capabilities.hasAntigravity) {
-        onUpdate?.({ content: [{ type: "text", text: `Antigravity not mounted, using Codex Alpha Search...` }] });
-        result = await searchCodex(query, config, options, signal);
-      } else if (!capabilities.hasCodex && !capabilities.hasAntigravity) {
-        // Neither engine detected in /v1/models: try Codex first optimistically, then Antigravity
-        try {
-          onUpdate?.({ content: [{ type: "text", text: `Probing Codex Alpha Search...` }] });
-          result = await searchCodex(query, config, options, signal);
-        } catch (err: any) {
-          onUpdate?.({ content: [{ type: "text", text: `Codex failed (${err?.message}), attempting Antigravity fallback...` }] });
-          result = await searchAntigravity(query, config, options, signal);
-        }
       } else {
-        // Both engines available: Codex first (~2s speed), fallback to Antigravity if any error occurs
-        try {
-          onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex ~2s fast route)...` }] });
+        const capabilities = await probeEngineCapabilities(config);
+
+        if (!capabilities.hasCodex && capabilities.hasAntigravity) {
+          onUpdate?.({ content: [{ type: "text", text: `Codex credentials not mounted, using Antigravity Google Grounding...` }] });
+          result = await searchAntigravity(query, config, options, signal);
+        } else if (capabilities.hasCodex && !capabilities.hasAntigravity) {
+          onUpdate?.({ content: [{ type: "text", text: `Antigravity not mounted, using Codex Alpha Search...` }] });
           result = await searchCodex(query, config, options, signal);
-        } catch (codexErr: any) {
-          onUpdate?.({
-            content: [{ type: "text", text: `Codex unavailable (${codexErr?.message || "transient error"}), falling back to Antigravity...` }],
-          });
+        } else if (!capabilities.hasCodex && !capabilities.hasAntigravity) {
+          // Neither engine detected in /v1/models: try Codex first optimistically, then Antigravity
           try {
+            onUpdate?.({ content: [{ type: "text", text: `Probing Codex Alpha Search...` }] });
+            result = await searchCodex(query, config, options, signal);
+          } catch (err: any) {
+            onUpdate?.({ content: [{ type: "text", text: `Codex failed (${err?.message}), attempting Antigravity fallback...` }] });
             result = await searchAntigravity(query, config, options, signal);
-          } catch (agyErr: any) {
-            throw new Error(
-              `All local search engines failed. Codex: ${codexErr?.message || "error"}; Antigravity: ${agyErr?.message || "error"}. Run /cliproxy-status to diagnose.`
-            );
+          }
+        } else {
+          // Both engines available: Codex first (~2s speed), fallback to Antigravity if any error occurs
+          try {
+            onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex ~2s fast route)...` }] });
+            result = await searchCodex(query, config, options, signal);
+          } catch (codexErr: any) {
+            const freshCooldown = getCodexCooldown();
+            const cooldownHint = freshCooldown.active
+              ? ` [已进入额度冷却模式，预计 ${formatCooldownTime(freshCooldown.cooldownUntil).relative} 后于 ${formatCooldownTime(freshCooldown.cooldownUntil).absolute} 恢复，期间将直接走兜底]`
+              : "";
+            onUpdate?.({
+              content: [{
+                type: "text",
+                text: `Codex unavailable (${codexErr?.message || "transient error"})${cooldownHint}, falling back to Antigravity...`,
+              }],
+            });
+            try {
+              result = await searchAntigravity(query, config, options, signal);
+              if (freshCooldown.active) {
+                const rem = formatCooldownTime(freshCooldown.cooldownUntil);
+                cooldownNotice = `Codex 触发额度冷却（预计 ${rem.relative} 后于 ${rem.absolute} 恢复），本次及到期前搜索自动由 Google Antigravity 承接。`;
+              }
+            } catch (agyErr: any) {
+              throw new Error(
+                `All local search engines failed. Codex: ${codexErr?.message || "error"}; Antigravity: ${agyErr?.message || "error"}. Run /cliproxy-status to diagnose.`
+              );
+            }
           }
         }
       }
     }
 
-    const formattedText = formatSearchResults(result);
+    const formattedText = formatSearchResults(result, cooldownNotice);
 
     return {
       content: [{ type: "text" as const, text: formattedText }],
@@ -291,24 +328,43 @@ export default function activate(pi: ExtensionAPI) {
 
   // Register a status command /cliproxy-status
   pi.registerCommand("cliproxy-status", {
-    description: "Check connectivity, mounted accounts, and search engines on CLIProxyAPI",
-    async handler(_args: string, ctx: any) {
+    description: "Check connectivity, mounted accounts, cooldown status, and search engines on CLIProxyAPI",
+    async handler(args: string, ctx: any) {
+      const action = (args || "").trim().toLowerCase();
+      if (action === "reset" || action === "clear") {
+        clearCodexCooldown();
+        ctx.ui.notify("Codex cooldown cache cleared. Next search will probe Codex again.", "info");
+        return;
+      }
+
       config = resolveCLIProxyConfig();
       ctx.ui.notify(`Probing CLIProxyAPI at ${config.endpoint} (source: ${config.source})...`, "info");
       
       const caps = await probeEngineCapabilities(config, true);
+      const cooldown = getCodexCooldown();
 
       let codexStatus = caps.hasCodex ? "MOUNTED" : "NOT FOUND";
       let agyStatus = caps.hasAntigravity ? "MOUNTED" : "NOT FOUND";
 
       if (caps.hasCodex) {
-        try {
-          const res = await searchCodex("ping", config, { limit: 1 });
-          if (res.results.length > 0 || res.elapsedMs > 0) {
-            codexStatus = "READY (OK, ~2s)";
+        if (cooldown.active) {
+          const rem = formatCooldownTime(cooldown.cooldownUntil);
+          codexStatus = `COOLING DOWN (Until ${rem.absolute}, ~${rem.relative} remaining, reason: ${cooldown.reason || "rate limit"})`;
+        } else {
+          try {
+            const res = await searchCodex("ping", config, { limit: 1 });
+            if (res.results.length > 0 || res.elapsedMs > 0) {
+              codexStatus = "READY (OK, ~2s)";
+            }
+          } catch (e: any) {
+            const fresh = getCodexCooldown();
+            if (fresh.active) {
+              const rem = formatCooldownTime(fresh.cooldownUntil);
+              codexStatus = `COOLING DOWN (Until ${rem.absolute}, ~${rem.relative} remaining)`;
+            } else {
+              codexStatus = `ERROR: ${e?.message || "unreachable"}`;
+            }
           }
-        } catch (e: any) {
-          codexStatus = `ERROR: ${e?.message || "unreachable"}`;
         }
       }
 
@@ -323,20 +379,25 @@ export default function activate(pi: ExtensionAPI) {
         }
       }
 
+      const activeStrategy = cooldown.active
+        ? `Codex in cooldown mode (All searches routed to Antigravity fallback until ${formatCooldownTime(cooldown.cooldownUntil).absolute})`
+        : caps.hasCodex && caps.hasAntigravity
+        ? "Dual-engine active (Codex fast-route with Antigravity fallback)"
+        : caps.hasCodex
+        ? "Single-engine (Codex only)"
+        : caps.hasAntigravity
+        ? "Single-engine (Antigravity only)"
+        : "No active search credentials found in CLIProxyAPI";
+
       const msg = [
         `CLIProxyAPI Gateway: ${config.endpoint}`,
         `• Config Source: ${config.source}`,
         `• Detected Models: ${caps.models.length} active`,
         `• Codex Alpha Search: ${codexStatus}`,
         `• Antigravity Grounding: ${agyStatus}`,
-        caps.hasCodex && caps.hasAntigravity
-          ? "Strategy: Dual-engine active (Codex fast-route with Antigravity fallback)"
-          : caps.hasCodex
-          ? "Strategy: Single-engine (Codex only)"
-          : caps.hasAntigravity
-          ? "Strategy: Single-engine (Antigravity only)"
-          : "Strategy: No active search credentials found in CLIProxyAPI"
-      ].join("\n");
+        `• Strategy: ${activeStrategy}`,
+        cooldown.active ? `• Tip: Run '/cliproxy-status reset' to manually clear cooldown cache.` : ""
+      ].filter(Boolean).join("\n");
 
       ctx.ui.notify(msg, "info");
     },

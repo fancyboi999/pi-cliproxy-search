@@ -1,4 +1,4 @@
-import type { CLIProxyConfig } from "./config.js";
+import type { CLIProxyConfig } from "./config.ts";
 
 export interface EngineCapabilities {
   hasCodex: boolean;

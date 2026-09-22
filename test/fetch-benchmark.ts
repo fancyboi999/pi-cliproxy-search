@@ -1,4 +1,4 @@
-import { fetchWebPage } from "../extensions/fetch.js";
+import { fetchWebPage } from "../extensions/fetch.ts";
 
 const testSites = [
   {
