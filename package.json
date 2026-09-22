@@ -1,6 +1,6 @@
 {
   "name": "pi-cliproxy-search",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Blazing-fast multi-engine web search & clean page fetch extension for Pi Coding Agent powered by local CLIProxyAPI (Codex & Antigravity) and Jina Reader.",
   "keywords": [
     "pi-package",
