@@ -105,7 +105,7 @@ export default function activate(pi: ExtensionAPI) {
       if (cooldown.active) {
         const remaining = formatCooldownTime(cooldown.cooldownUntil);
         throw new Error(
-          `Codex Alpha Search 处于额度冷却中（预计在 ${remaining.relative} 后的 ${remaining.absolute} 恢复）。建议切换为 auto 模式或使用 antigravity 引擎。`
+          `Codex Alpha Search is currently in rate-limit cooldown (recovers in ~${remaining.relative} at ${remaining.absolute}). Suggest switching to 'auto' mode or using 'antigravity' engine.`
         );
       }
       onUpdate?.({ content: [{ type: "text", text: `Searching CLIProxyAPI (Codex Alpha Search)...` }] });
@@ -118,11 +118,11 @@ export default function activate(pi: ExtensionAPI) {
       if (cooldown.active) {
         // Cooldown period: skip Codex attempt directly and use Antigravity
         const remaining = formatCooldownTime(cooldown.cooldownUntil);
-        cooldownNotice = `Codex 额度冷却中（预计 ${remaining.relative} 后于 ${remaining.absolute} 恢复），已自动切换至 Google Antigravity 兜底。`;
+        cooldownNotice = `Codex Alpha Search is in rate-limit cooldown (recovers in ~${remaining.relative} at ${remaining.absolute}). Automatically routed to Google Antigravity Grounding fallback.`;
         onUpdate?.({
           content: [{
             type: "text",
-            text: `Codex 额度冷却中（预计 ${remaining.relative} 后于 ${remaining.absolute} 恢复），自动路由至 Antigravity 搜索...`,
+            text: `Codex in cooldown (~${remaining.relative} left until ${remaining.absolute}), routing automatically to Antigravity fallback...`,
           }],
         });
         result = await searchAntigravity(query, config, options, signal);
@@ -152,7 +152,7 @@ export default function activate(pi: ExtensionAPI) {
           } catch (codexErr: any) {
             const freshCooldown = getCodexCooldown();
             const cooldownHint = freshCooldown.active
-              ? ` [已进入额度冷却模式，预计 ${formatCooldownTime(freshCooldown.cooldownUntil).relative} 后于 ${formatCooldownTime(freshCooldown.cooldownUntil).absolute} 恢复，期间将直接走兜底]`
+              ? ` [Entered rate-limit cooldown: recovers in ~${formatCooldownTime(freshCooldown.cooldownUntil).relative} at ${formatCooldownTime(freshCooldown.cooldownUntil).absolute}, routing to fallback]`
               : "";
             onUpdate?.({
               content: [{
@@ -164,7 +164,7 @@ export default function activate(pi: ExtensionAPI) {
               result = await searchAntigravity(query, config, options, signal);
               if (freshCooldown.active) {
                 const rem = formatCooldownTime(freshCooldown.cooldownUntil);
-                cooldownNotice = `Codex 触发额度冷却（预计 ${rem.relative} 后于 ${rem.absolute} 恢复），本次及到期前搜索自动由 Google Antigravity 承接。`;
+                cooldownNotice = `Codex entered rate-limit cooldown (recovers in ~${rem.relative} at ${rem.absolute}). Search routed to Google Antigravity Grounding fallback.`;
               }
             } catch (agyErr: any) {
               throw new Error(

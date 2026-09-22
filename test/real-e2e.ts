@@ -9,7 +9,7 @@ import { getCodexCooldown, clearCodexCooldown, formatCooldownTime } from "../ext
 const COOLDOWN_FILE = path.join(os.homedir(), ".pi", "agent", "cliproxy-cooldown.json");
 
 async function runRealE2E() {
-  console.log("=== 1. 清理环境与初始状态确认 ===");
+  console.log("=== 1. Environment Cleanup & Initial State Verification ===");
   clearCodexCooldown();
   console.log("Cooldown file exists after clear:", fs.existsSync(COOLDOWN_FILE));
   console.log("Initial state:", getCodexCooldown());
@@ -17,51 +17,51 @@ async function runRealE2E() {
   const cfg = resolveCLIProxyConfig();
   console.log("Config endpoint:", cfg.endpoint, "| apiKey present:", Boolean(cfg.apiKey));
 
-  console.log("\n=== 2. 真实调用 Codex 触发真实 429 ===");
+  console.log("\n=== 2. Real Codex Invocation Triggering Live 429 ===");
   let codexError: Error | null = null;
   try {
     await searchCodex("ping", cfg);
   } catch (err: any) {
     codexError = err;
-    console.log("真实捕获的 Codex 错误信息:\n", err.message);
+    console.log("Captured live Codex error message:\n", err.message);
   }
 
   if (!codexError) {
-    throw new Error("FAIL: 预期应当捕获 429 冷却错误，但未抛出");
+    throw new Error("FAIL: Expected 429 cooldown error from Codex, but none was thrown");
   }
 
-  console.log("\n=== 3. 验证真实冷却状态是否落盘 ===");
+  console.log("\n=== 3. Verify Live Cooldown State File Persistence ===");
   if (!fs.existsSync(COOLDOWN_FILE)) {
-    throw new Error("FAIL: ~/.pi/agent/cliproxy-cooldown.json 未生成！");
+    throw new Error("FAIL: ~/.pi/agent/cliproxy-cooldown.json was not generated!");
   }
   const persistedContent = fs.readFileSync(COOLDOWN_FILE, "utf-8");
-  console.log("真实落盘文件内容:\n", persistedContent);
+  console.log("Persisted file content:\n", persistedContent);
 
   const state = getCodexCooldown();
-  console.log("解析出的内存/落盘状态:", state);
+  console.log("Parsed memory/persisted state:", state);
   const time = formatCooldownTime(state.cooldownUntil);
-  console.log(`格式化时间: 恢复时刻 ${time.absolute}, 剩余 ${time.relative}, 剩余秒数 ${time.remainingSeconds}`);
+  console.log(`Formatted timing: Recovery at ${time.absolute}, Remaining ${time.relative}, Remaining seconds: ${time.remainingSeconds}`);
 
   if (!state.active || time.remainingSeconds <= 0) {
-    throw new Error("FAIL: 冷却状态未激活或剩余秒数异常");
+    throw new Error("FAIL: Cooldown state not active or remaining seconds invalid");
   }
 
-  console.log("\n=== 4. 验证冷却期内的 Codex 显式请求拦截 ===");
+  console.log("\n=== 4. Verify Immediate Zero-Network Interception During Cooldown ===");
   try {
     await searchCodex("ping again", cfg);
-    throw new Error("FAIL: 冷却期内应当直接拦截 searchCodex，不应继续执行！");
+    throw new Error("FAIL: searchCodex should reject immediately during cooldown without network calls!");
   } catch (err: any) {
-    console.log("冷却期内直接拦截成功，错误信息:\n", err.message);
+    console.log("Successfully intercepted during cooldown with message:\n", err.message);
   }
 
-  console.log("\n=== 5. 真实调用 Antigravity 验证兜底链路可达性 ===");
+  console.log("\n=== 5. Live Antigravity Fallback Execution ===");
   const startAgy = Date.now();
   const agyRes = await searchAntigravity("Python official documentation", cfg, { limit: 2 });
-  console.log(`Antigravity 真实搜索成功，耗时 ${Date.now() - startAgy}ms，结果条数: ${agyRes.results.length}`);
-  console.log("首条结果标题:", agyRes.results[0]?.title);
-  console.log("首条结果 URL:", agyRes.results[0]?.url);
+  console.log(`Antigravity search succeeded in ${Date.now() - startAgy}ms, Results count: ${agyRes.results.length}`);
+  console.log("First result title:", agyRes.results[0]?.title);
+  console.log("First result URL:", agyRes.results[0]?.url);
 
-  console.log("\n=== 6. 真实模拟 Pi 插件完整 Tool 管道执行 (auto 模式) ===");
+  console.log("\n=== 6. Simulated Full Pi Plugin Tool Pipeline Execution (auto mode) ===");
   const { default: activate } = await import("../extensions/index.ts");
   const tools: Record<string, any> = {};
   const commands: Record<string, any> = {};
@@ -77,22 +77,28 @@ async function runRealE2E() {
     if (text) updates.push(text);
   };
 
-  console.log("执行 cliproxy_search (auto 模式)...");
+  console.log("Executing cliproxy_search in 'auto' mode...");
   const toolResult = await tools["cliproxy_search"].execute("call_1", { query: "Docker Compose spec" }, undefined, onUpdate);
-  console.log("Tool 执行过程 updates 提示:", updates);
-  console.log("Tool 执行返回 details:", toolResult.details);
-  console.log("Tool 返回前 200 字符:\n", toolResult.content[0].text.slice(0, 200));
+  console.log("Tool execution runtime update notices:", updates);
+  console.log("Tool execution return details:", toolResult.details);
+  console.log("Tool output first 200 chars:\n", toolResult.content[0].text.slice(0, 200));
 
   if (toolResult.details.engine !== "antigravity") {
-    throw new Error("FAIL: 预期应当自动路由至 antigravity 引擎");
+    throw new Error("FAIL: Expected automatic fallback to antigravity engine");
   }
 
-  console.log("\n✅ Tool 完整执行流程与冷却提示验证通过！");
+  if (!updates.some((u) => u.includes("in cooldown"))) {
+    throw new Error("FAIL: Expected English cooldown notice in updates");
+  }
+  if (!toolResult.content[0].text.includes("rate-limit cooldown")) {
+    throw new Error("FAIL: Expected English rate-limit cooldown notice in Markdown header");
+  }
 
-  console.log("\n✅ E2E 全链路真实验证全部通过！");
+  console.log("\n✅ Tool complete pipeline execution and English notices verified!");
+  console.log("\n✅ Full E2E live verification completely passed!");
 }
 
 runRealE2E().catch((e) => {
-  console.error("❌ E2E 测试失败:", e);
+  console.error("❌ E2E test failed:", e);
   process.exit(1);
 });
