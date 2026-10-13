@@ -1,5 +1,46 @@
 import type { CLIProxyConfig } from "./config.ts";
 import type { SearchResponse, SearchItem, SearchOptions } from "./types.ts";
+import {
+  DEFAULT_ANTIGRAVITY_MODEL,
+  selectBestAntigravityModel,
+  probeEngineCapabilities,
+} from "./probe.ts";
+
+export { DEFAULT_ANTIGRAVITY_MODEL, selectBestAntigravityModel };
+
+/**
+ * Resolves the effective Antigravity model name following hierarchy:
+ * 1. Explicit model option
+ * 2. Environment variable (CLIPROXY_ANTIGRAVITY_MODEL or ANTIGRAVITY_MODEL)
+ * 3. Probed active capabilities from CLIProxyAPI
+ * 4. Fallback default (DEFAULT_ANTIGRAVITY_MODEL)
+ */
+export async function resolveAntigravityModel(
+  cfg?: CLIProxyConfig,
+  explicitModel?: string
+): Promise<string> {
+  if (explicitModel && explicitModel.trim()) {
+    return explicitModel.trim();
+  }
+
+  const envModel = process.env.CLIPROXY_ANTIGRAVITY_MODEL || process.env.ANTIGRAVITY_MODEL;
+  if (envModel && envModel.trim()) {
+    return envModel.trim();
+  }
+
+  if (cfg) {
+    try {
+      const caps = await probeEngineCapabilities(cfg);
+      if (caps.antigravityModel) {
+        return caps.antigravityModel;
+      }
+      const best = selectBestAntigravityModel(caps.models);
+      if (best) return best;
+    } catch {}
+  }
+
+  return DEFAULT_ANTIGRAVITY_MODEL;
+}
 
 interface AnthropicMessageResponse {
   id?: string;
@@ -40,9 +81,10 @@ export async function searchAntigravity(
 ): Promise<SearchResponse> {
   const startTime = Date.now();
   const limit = options?.limit ?? 5;
+  const targetModel = await resolveAntigravityModel(cfg, options?.model);
 
   const payload = {
-    model: "gemini-3.7-flash-high",
+    model: targetModel,
     max_tokens: 1024,
     messages: [
       {
@@ -86,7 +128,7 @@ export async function searchAntigravity(
 
   const data = (await response.json()) as AnthropicMessageResponse;
   const items: SearchItem[] = [];
-  const seenUrls = new Set<string>();
+  const urlMap = new Map<string, SearchItem>();
 
   let summaryText = "";
 
@@ -95,26 +137,51 @@ export async function searchAntigravity(
       summaryText += block.text;
       // Extract inline citations if present
       for (const cit of block.citations || []) {
-        if (cit.url && !seenUrls.has(cit.url)) {
-          seenUrls.add(cit.url);
-          items.push({
+        if (!cit.url) continue;
+        const existing = urlMap.get(cit.url);
+        if (existing) {
+          if (!existing.snippet && cit.cited_text) {
+            existing.snippet = cit.cited_text;
+          }
+          if ((!existing.title || existing.title === existing.url) && cit.title) {
+            existing.title = cit.title;
+          }
+        } else {
+          let domain: string | undefined;
+          try {
+            domain = new URL(cit.url).hostname;
+          } catch {}
+          const item: SearchItem = {
             title: cit.title || cit.url,
             url: cit.url,
-            domain: new URL(cit.url).hostname,
+            domain,
             snippet: cit.cited_text || "",
-          });
+          };
+          urlMap.set(cit.url, item);
+          items.push(item);
         }
       }
     } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
       for (const res of block.content) {
-        if (res.url && !seenUrls.has(res.url)) {
-          seenUrls.add(res.url);
-          items.push({
+        if (!res.url) continue;
+        const existing = urlMap.get(res.url);
+        if (existing) {
+          if ((!existing.title || existing.title === existing.url) && res.title) {
+            existing.title = res.title;
+          }
+        } else {
+          let domain: string | undefined;
+          try {
+            domain = new URL(res.url).hostname;
+          } catch {}
+          const item: SearchItem = {
             title: res.title || res.url,
             url: res.url,
-            domain: new URL(res.url).hostname,
+            domain,
             snippet: "",
-          });
+          };
+          urlMap.set(res.url, item);
+          items.push(item);
         }
       }
     }

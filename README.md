@@ -154,6 +154,7 @@ Create or edit `~/.pi/agent/cliproxy-search.json`:
 ```bash
 export CLIPROXY_ENDPOINT="http://remote-server:8317"
 export CLIPROXY_API_KEY="your-secret-token"
+export CLIPROXY_ANTIGRAVITY_MODEL="gemini-3.8-flash-high" # Optional model override (defaults to auto-detected active model)
 ```
 
 ---

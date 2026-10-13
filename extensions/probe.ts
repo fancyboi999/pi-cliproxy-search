@@ -1,8 +1,52 @@
 import type { CLIProxyConfig } from "./config.ts";
 
+export const DEFAULT_ANTIGRAVITY_MODEL = "gemini-3.8-flash-high";
+
+/**
+ * Extracts numeric version from Gemini model IDs (e.g. "gemini-3.8-flash-high" -> 3.8).
+ */
+export function parseGeminiVersion(modelId: string): number {
+  const match = modelId.match(/gemini-(\d+(?:\.\d+)?)/i);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+/**
+ * Selects the optimal Antigravity grounding model from active models.
+ * Prioritizes flash-high models with the highest version number (e.g. gemini-3.8-flash-high > gemini-3.7-flash-high),
+ * followed by explicit antigravity models, then other gemini-flash models.
+ */
+export function selectBestAntigravityModel(modelIds: string[]): string | undefined {
+  if (!modelIds || modelIds.length === 0) return undefined;
+
+  // 1. Flash-high models sorted by version descending
+  const flashHighModels = modelIds
+    .filter((id) => id.includes("flash-high") || (id.startsWith("gemini") && id.includes("flash") && id.includes("high")))
+    .sort((a, b) => parseGeminiVersion(b) - parseGeminiVersion(a));
+
+  if (flashHighModels.length > 0) {
+    return flashHighModels[0];
+  }
+
+  // 2. Explicit antigravity-named models
+  const agyModel = modelIds.find((id) => id.includes("antigravity"));
+  if (agyModel) return agyModel;
+
+  // 3. Any Gemini flash models sorted by version descending
+  const flashModels = modelIds
+    .filter((id) => id.startsWith("gemini") && id.includes("flash"))
+    .sort((a, b) => parseGeminiVersion(b) - parseGeminiVersion(a));
+
+  if (flashModels.length > 0) {
+    return flashModels[0];
+  }
+
+  return undefined;
+}
+
 export interface EngineCapabilities {
   hasCodex: boolean;
   hasAntigravity: boolean;
+  antigravityModel?: string;
   models: string[];
   lastChecked: number;
 }
@@ -47,6 +91,7 @@ export async function probeEngineCapabilities(
         cachedCapabilities || {
           hasCodex: true,
           hasAntigravity: true,
+          antigravityModel: DEFAULT_ANTIGRAVITY_MODEL,
           models: [],
           lastChecked: now,
         }
@@ -69,9 +114,12 @@ export async function probeEngineCapabilities(
         id.includes("antigravity")
     );
 
+    const antigravityModel = selectBestAntigravityModel(modelIds) || (hasAntigravity ? DEFAULT_ANTIGRAVITY_MODEL : undefined);
+
     cachedCapabilities = {
       hasCodex,
       hasAntigravity,
+      antigravityModel,
       models: modelIds,
       lastChecked: now,
     };
@@ -83,6 +131,7 @@ export async function probeEngineCapabilities(
       cachedCapabilities || {
         hasCodex: true,
         hasAntigravity: true,
+        antigravityModel: DEFAULT_ANTIGRAVITY_MODEL,
         models: [],
         lastChecked: now,
       }

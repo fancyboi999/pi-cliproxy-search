@@ -18,4 +18,5 @@ export interface SearchOptions {
   engine?: "auto" | "codex" | "antigravity";
   limit?: number;
   deep?: boolean;
+  model?: string;
 }

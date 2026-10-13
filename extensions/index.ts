@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveCLIProxyConfig, saveCLIProxyConfigFile } from "./config.ts";
 import { searchCodex } from "./codex.ts";
 import { searchAntigravity } from "./antigravity.ts";
-import { probeEngineCapabilities } from "./probe.ts";
+import { probeEngineCapabilities, DEFAULT_ANTIGRAVITY_MODEL } from "./probe.ts";
 import { fetchWebPage } from "./fetch.ts";
 import { getCodexCooldown, clearCodexCooldown, formatCooldownTime } from "./cooldown.ts";
 import type { SearchResponse, SearchOptions } from "./types.ts";
@@ -369,13 +369,14 @@ export default function activate(pi: ExtensionAPI) {
       }
 
       if (caps.hasAntigravity) {
+        const agyModelName = caps.antigravityModel || DEFAULT_ANTIGRAVITY_MODEL;
         try {
           const res = await searchAntigravity("ping", config, { limit: 1 });
           if (res.results.length > 0 || res.elapsedMs > 0) {
-            agyStatus = "READY (OK)";
+            agyStatus = `READY (OK, ${agyModelName})`;
           }
         } catch (e: any) {
-          agyStatus = `ERROR: ${e?.message || "unreachable"}`;
+          agyStatus = `ERROR (${agyModelName}): ${e?.message || "unreachable"}`;
         }
       }
 
