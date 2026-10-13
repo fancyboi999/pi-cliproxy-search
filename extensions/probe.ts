@@ -1,8 +1,60 @@
 import type { CLIProxyConfig } from "./config.ts";
 
+export const DEFAULT_ANTIGRAVITY_MODEL = "gemini-3.8-flash-high";
+
+/**
+ * Extracts numeric major and minor versions from Gemini model IDs
+ * (e.g. "gemini-3.8-flash-high" -> [3, 8], "gemini-3.10-flash-high" -> [3, 10]).
+ * Avoids the parseFloat("3.10") === 3.1 semver truncation bug.
+ */
+export function parseGeminiVersion(modelId: string): [number, number] {
+  const match = modelId.match(/gemini-(\d+)(?:\.(\d+))?/i);
+  return match ? [parseInt(match[1], 10), parseInt(match[2] || "0", 10)] : [0, 0];
+}
+
+function compareGeminiVersions(a: string, b: string): number {
+  const [aMaj, aMin] = parseGeminiVersion(a);
+  const [bMaj, bMin] = parseGeminiVersion(b);
+  return bMaj - aMaj || bMin - aMin;
+}
+
+/**
+ * Selects the optimal Antigravity grounding model from active models.
+ * Prioritizes flash-high models with the highest version number (e.g. gemini-3.8-flash-high > gemini-3.7-flash-high),
+ * followed by explicit antigravity models, then other gemini-flash models.
+ */
+export function selectBestAntigravityModel(modelIds: string[]): string | undefined {
+  if (!modelIds || modelIds.length === 0) return undefined;
+
+  // 1. Flash-high models sorted by semver descending
+  const flashHighModels = modelIds
+    .filter((id) => id.includes("flash-high"))
+    .sort(compareGeminiVersions);
+
+  if (flashHighModels.length > 0) {
+    return flashHighModels[0];
+  }
+
+  // 2. Explicit antigravity-named models
+  const agyModel = modelIds.find((id) => id.includes("antigravity"));
+  if (agyModel) return agyModel;
+
+  // 3. Any Gemini flash models sorted by semver descending
+  const flashModels = modelIds
+    .filter((id) => id.startsWith("gemini") && id.includes("flash"))
+    .sort(compareGeminiVersions);
+
+  if (flashModels.length > 0) {
+    return flashModels[0];
+  }
+
+  return undefined;
+}
+
 export interface EngineCapabilities {
   hasCodex: boolean;
   hasAntigravity: boolean;
+  antigravityModel?: string;
   models: string[];
   lastChecked: number;
 }
@@ -47,6 +99,7 @@ export async function probeEngineCapabilities(
         cachedCapabilities || {
           hasCodex: true,
           hasAntigravity: true,
+          antigravityModel: DEFAULT_ANTIGRAVITY_MODEL,
           models: [],
           lastChecked: now,
         }
@@ -69,9 +122,12 @@ export async function probeEngineCapabilities(
         id.includes("antigravity")
     );
 
+    const antigravityModel = selectBestAntigravityModel(modelIds) || (hasAntigravity ? DEFAULT_ANTIGRAVITY_MODEL : undefined);
+
     cachedCapabilities = {
       hasCodex,
       hasAntigravity,
+      antigravityModel,
       models: modelIds,
       lastChecked: now,
     };
@@ -83,6 +139,7 @@ export async function probeEngineCapabilities(
       cachedCapabilities || {
         hasCodex: true,
         hasAntigravity: true,
+        antigravityModel: DEFAULT_ANTIGRAVITY_MODEL,
         models: [],
         lastChecked: now,
       }
