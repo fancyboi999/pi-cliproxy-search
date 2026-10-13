@@ -12,7 +12,10 @@ test("CLIProxy Engine Capabilities Probe", async () => {
   assert.ok(caps.models.length > 0, "should discover active registered models");
   assert.strictEqual(typeof caps.hasCodex, "boolean");
   assert.strictEqual(typeof caps.hasAntigravity, "boolean");
-  console.log(`Capabilities probed: Codex=${caps.hasCodex}, Antigravity=${caps.hasAntigravity}, Models=${caps.models.length}`);
+  if (caps.hasAntigravity) {
+    assert.ok(caps.antigravityModel && caps.antigravityModel.length > 0, "antigravityModel should be resolved");
+  }
+  console.log(`Capabilities probed: Codex=${caps.hasCodex}, Antigravity=${caps.hasAntigravity} (${caps.antigravityModel}), Models=${caps.models.length}`);
 });
 
 test("CLIProxy Config Resolution", () => {

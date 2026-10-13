@@ -97,12 +97,20 @@ export async function searchCodex(
   const data = (await response.json()) as CodexAlphaSearchRawResult;
   const rawResults = data.results || [];
 
-  const items: SearchItem[] = rawResults.slice(0, limit).map((r) => ({
-    title: r.title || r.url || "Untitled",
-    url: r.url || "",
-    domain: r.domain || (r.url ? new URL(r.url).hostname : ""),
-    snippet: r.snippet?.trim() || "",
-  }));
+  const items: SearchItem[] = rawResults.slice(0, limit).map((r) => {
+    let domain = r.domain;
+    if (!domain && r.url) {
+      try {
+        domain = new URL(r.url).hostname;
+      } catch {}
+    }
+    return {
+      title: r.title || r.url || "Untitled",
+      url: r.url || "",
+      domain: domain || "",
+      snippet: r.snippet?.trim() || "",
+    };
+  });
 
   let rawMarkdownSnippet: string | undefined;
   if (deep && data.output) {

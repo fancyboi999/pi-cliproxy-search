@@ -3,11 +3,19 @@ import type { CLIProxyConfig } from "./config.ts";
 export const DEFAULT_ANTIGRAVITY_MODEL = "gemini-3.8-flash-high";
 
 /**
- * Extracts numeric version from Gemini model IDs (e.g. "gemini-3.8-flash-high" -> 3.8).
+ * Extracts numeric major and minor versions from Gemini model IDs
+ * (e.g. "gemini-3.8-flash-high" -> [3, 8], "gemini-3.10-flash-high" -> [3, 10]).
+ * Avoids the parseFloat("3.10") === 3.1 semver truncation bug.
  */
-export function parseGeminiVersion(modelId: string): number {
-  const match = modelId.match(/gemini-(\d+(?:\.\d+)?)/i);
-  return match ? parseFloat(match[1]) : 0;
+export function parseGeminiVersion(modelId: string): [number, number] {
+  const match = modelId.match(/gemini-(\d+)(?:\.(\d+))?/i);
+  return match ? [parseInt(match[1], 10), parseInt(match[2] || "0", 10)] : [0, 0];
+}
+
+function compareGeminiVersions(a: string, b: string): number {
+  const [aMaj, aMin] = parseGeminiVersion(a);
+  const [bMaj, bMin] = parseGeminiVersion(b);
+  return bMaj - aMaj || bMin - aMin;
 }
 
 /**
@@ -18,10 +26,10 @@ export function parseGeminiVersion(modelId: string): number {
 export function selectBestAntigravityModel(modelIds: string[]): string | undefined {
   if (!modelIds || modelIds.length === 0) return undefined;
 
-  // 1. Flash-high models sorted by version descending
+  // 1. Flash-high models sorted by semver descending
   const flashHighModels = modelIds
-    .filter((id) => id.includes("flash-high") || (id.startsWith("gemini") && id.includes("flash") && id.includes("high")))
-    .sort((a, b) => parseGeminiVersion(b) - parseGeminiVersion(a));
+    .filter((id) => id.includes("flash-high"))
+    .sort(compareGeminiVersions);
 
   if (flashHighModels.length > 0) {
     return flashHighModels[0];
@@ -31,10 +39,10 @@ export function selectBestAntigravityModel(modelIds: string[]): string | undefin
   const agyModel = modelIds.find((id) => id.includes("antigravity"));
   if (agyModel) return agyModel;
 
-  // 3. Any Gemini flash models sorted by version descending
+  // 3. Any Gemini flash models sorted by semver descending
   const flashModels = modelIds
     .filter((id) => id.startsWith("gemini") && id.includes("flash"))
-    .sort((a, b) => parseGeminiVersion(b) - parseGeminiVersion(a));
+    .sort(compareGeminiVersions);
 
   if (flashModels.length > 0) {
     return flashModels[0];

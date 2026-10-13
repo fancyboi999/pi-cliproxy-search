@@ -34,8 +34,6 @@ export async function resolveAntigravityModel(
       if (caps.antigravityModel) {
         return caps.antigravityModel;
       }
-      const best = selectBestAntigravityModel(caps.models);
-      if (best) return best;
     } catch {}
   }
 
