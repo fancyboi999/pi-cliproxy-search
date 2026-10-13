@@ -15,25 +15,56 @@ on:
   release:
     types: [published]
 
+# Serialize version bumps and publishing; do not cancel an in-flight release.
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  id-token: write
+  contents: write # workflow_dispatch commits the version bump and tag
+  id-token: write # npm exchanges GitHub's OIDC identity for publish credentials
 
 jobs:
   publish:
+    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 20
+          node-version: 24
           registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install OIDC-capable npm
+        # Trusted publishing requires npm >= 11.5.1 and Node >= 22.14.0.
+        run: |
+          npm install --global npm@11
+          node --version
+          npm --version
+
+      - name: Verify release tag matches package version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          expected="v$(node -p 'require("./package.json").version')"
+          if [ "$RELEASE_TAG" != "$expected" ]; then
+            echo "Release tag $RELEASE_TAG does not match package version $expected" >&2
+            exit 1
+          fi
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build & Type Check
+        run: npm run build
 
       - name: Configure Git Author
         if: github.event_name == 'workflow_dispatch'
@@ -43,17 +74,12 @@ jobs:
 
       - name: Bump Version & Tag
         if: github.event_name == 'workflow_dispatch'
-        run: |
-          npm version ${{ inputs.release_type }} -m "chore(release): %s [skip ci]"
-          git push origin HEAD:${{ github.ref_name }} --follow-tags
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Build & Type Check
-        run: npm run build
-
-      - name: Publish to npm with Provenance
-        run: npm publish --access public --provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+        run: |
+          npm version "$RELEASE_TYPE" -m "chore(release): %s [skip ci]"
+          git push origin HEAD:main --follow-tags
+
+      - name: Publish to npm with Trusted Publishing
+        # No NODE_AUTH_TOKEN or NPM_TOKEN: authentication must use OIDC.
+        run: npm publish --access public --provenance

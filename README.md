@@ -240,6 +240,24 @@ Contributions, bug reports, and pull requests are warmly welcome!
 
 ---
 
+## Publishing
+
+`.github/workflows/publish.yml` publishes through [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) using GitHub Actions OIDC. It uses GitHub-hosted runners, Node.js 24, and npm 11. No `NPM_TOKEN` secret is required.
+
+For a new release, dispatch the workflow on `main`:
+
+```bash
+gh workflow run publish.yml --ref main -f release_type=patch
+```
+
+The workflow installs dependencies and type-checks before committing the version bump, pushing its tag, and publishing to npm. Use `minor` or `major` when appropriate. If a manual dispatch fails after pushing the version tag, confirm that version is not yet on npm and publish a GitHub Release for the existing tag to retry without another version bump. Failed release-triggered runs can use **Re-run failed jobs**.
+
+Publishing a GitHub Release also triggers the workflow, without a version bump. Its tag must match `v<package.json version>` and contain this workflow. Do not publish a GitHub Release for a version already published to npm.
+
+Maintainers must configure the package's npm Trusted Publisher for `fancyboi999/pi-cliproxy-search`, workflow filename `publish.yml`, with **Allow npm publish** enabled. No GitHub environment is configured. After the first successful OIDC publish, disallow token-based publishing and revoke unused automation tokens. A newly configured publisher must complete its first publish within two days.
+
+---
+
 ## 📄 License
 
 [MIT License](LICENSE) © 2026 [fancyboi999](https://github.com/fancyboi999)
