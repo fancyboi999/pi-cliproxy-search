@@ -202,6 +202,11 @@ When you need to inspect an exact article, GitHub documentation, or blog post fr
 | :--- | :--- | :--- | :--- |
 | `url` | `string` | **required** | The target webpage URL to fetch and convert to Markdown. |
 | `maxChars` | `integer` | `15000` | Safety context cap (0 for unlimited). Truncates long pages to protect LLM context windows. |
+| `timeoutMs` | `integer` | `20000` | Total network budget in milliseconds (1–120000), including response bodies across both routes. |
+
+The reader gets up to 12 seconds (60% of shorter budgets). Direct fallback gets up to 8 seconds, limited by the remaining total budget. For example, `timeoutMs: 8000` gives the reader up to 4.8 seconds and leaves at least 3.2 seconds for fallback, excluding scheduling overhead. Caller cancellation stops the operation without starting fallback. If both routes fail, the error includes each route's failure; an origin HTTP 404 remains an error.
+
+Independent fetches in a codemode batch should use `Promise.allSettled` or local error handling so one unavailable page does not interrupt unrelated work.
 
 **Why `cliproxy_fetch` over `curl`?**
 * **Clean Markdown Extraction**: Powered by Jina Reader (`r.jina.ai`) — eliminates `<script>`, `<style>`, navigation bars, cookie banners, and ads.
