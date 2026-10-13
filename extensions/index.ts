@@ -4,7 +4,7 @@ import { resolveCLIProxyConfig, saveCLIProxyConfigFile } from "./config.ts";
 import { searchCodex } from "./codex.ts";
 import { searchAntigravity } from "./antigravity.ts";
 import { probeEngineCapabilities, DEFAULT_ANTIGRAVITY_MODEL } from "./probe.ts";
-import { fetchWebPage } from "./fetch.ts";
+import { fetchWebPage, DEFAULT_FETCH_TIMEOUT_MS } from "./fetch.ts";
 import { getCodexCooldown, clearCodexCooldown, formatCooldownTime } from "./cooldown.ts";
 import type { SearchResponse, SearchOptions } from "./types.ts";
 
@@ -200,15 +200,23 @@ export default function activate(pi: ExtensionAPI) {
         default: 15000,
       })
     ),
+    timeoutMs: Type.Optional(
+      Type.Integer({
+        description: "Total network timeout in milliseconds, including reader and direct fallback response bodies (default 20000).",
+        minimum: 1,
+        maximum: 120000,
+        default: DEFAULT_FETCH_TIMEOUT_MS,
+      })
+    ),
   });
 
   async function executeFetch(
-    params: { url: string; maxChars?: number },
+    params: { url: string; maxChars?: number; timeoutMs?: number },
     signal?: AbortSignal,
     onUpdate?: any
   ) {
     onUpdate?.({ content: [{ type: "text", text: `Fetching and extracting clean markdown from ${params.url}...` }] });
-    const res = await fetchWebPage(params.url, { maxChars: params.maxChars }, signal);
+    const res = await fetchWebPage(params.url, { maxChars: params.maxChars, timeoutMs: params.timeoutMs }, signal);
 
     let header = `### Web Page Content (${res.engine === "jina" ? "Jina Reader" : "Direct Fetch"}, ${res.elapsedMs}ms)\n\n`;
     if (res.title) {
